@@ -1,2 +1,2 @@
-# Glittz.Battlematch.Alpha.self
+# Glitz.-BATTLEsystem
 Created via Acode
