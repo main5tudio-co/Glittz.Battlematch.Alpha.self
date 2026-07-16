@@ -279,6 +279,11 @@
             if(STATE.weather.id === 'Rain' && u.type !== 'spear') mv = Math.max(1, mv - 1);
             return mv;
         },
+        recoverStamina: function(u) {
+            u.st = Math.min(100, u.st + 15);
+            document.getElementById(`st-txt-${u.id}`).innerText = u.st;
+            document.getElementById(`s-${u.id}`).style.width = `${u.st}%`;
+        },
         updateVision: function() {
             if(STATE.weather.id === 'Sun') {
                 STATE.units.forEach(u => { if(u.hp > 0) {u.m.visible = true; u.ui.style.display = 'flex';} }); return; 
@@ -841,7 +846,7 @@
                 if(dx === 0 || dz === 0 || b.type === 'archer') { 
                     if(Math.abs(dx) > Math.abs(dz)) b.m.rotation.y = dx === -1 ? Math.PI/2 : -Math.PI/2; else b.m.rotation.y = dz === -1 ? 0 : Math.PI;
                     let tgts = COMBAT.getValidTargets(b);
-                    if(tgts.includes(cp)) { COMBAT.executeAttack(b,cp); idx++; setTimeout(nextBot, 1500); return; }
+                    if(tgts.includes(cp)) { COMBAT.executeAttack(b,cp); COMBAT.recoverStamina(b); idx++; setTimeout(nextBot, 1500); return; }
                 }
 
                 let pt = COMBAT.getPath(b.x, b.z, cp.x, cp.z);
@@ -854,12 +859,12 @@
                             b.m.lookAt(b.tTgt.m.position.x, b.m.position.y, b.tTgt.m.position.z); let ndx = Math.sign(b.tTgt.x - b.x), ndz = Math.sign(b.tTgt.z - b.z);
                             if(Math.abs(ndx) > Math.abs(ndz)) b.m.rotation.y = ndx === -1 ? Math.PI/2 : -Math.PI/2; else b.m.rotation.y = ndz === -1 ? 0 : Math.PI;
                             let tgts = COMBAT.getValidTargets(b);
-                            if(tgts.length > 0) { COMBAT.executeAttack(b, tgts[0]); setTimeout(nextBot, 1500); } else { setTimeout(nextBot, 500); } 
+                            if(tgts.length > 0) { COMBAT.executeAttack(b, tgts[0]); COMBAT.recoverStamina(b); setTimeout(nextBot, 1500); } else { COMBAT.recoverStamina(b); setTimeout(nextBot, 500); } 
                             idx++;
                         }; return;
                     }
                 }
-                idx++; setTimeout(nextBot, 500); 
+                idx++; COMBAT.recoverStamina(b); setTimeout(nextBot, 500); 
             }; setTimeout(nextBot, 1000); 
         },
 
