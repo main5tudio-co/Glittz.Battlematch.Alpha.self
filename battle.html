@@ -106,10 +106,15 @@
         .abtn { padding: 12px 24px; font-weight: bold; border-radius: 6px; cursor: pointer; border: 2px solid #fff; font-size: 14px; text-transform: uppercase; box-shadow: 0 4px 6px rgba(0,0,0,0.4);}
     </style>
     <script src="js/game.config.js"></script>
+    <script src="js/assets.config.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
+
+    <audio id="bgmAmbient" loop preload="none"></audio>
+    <audio id="bgmConflict" loop preload="none"></audio>
+    <audio id="envLoopBed" loop preload="none"></audio>
 
     <div id="atmosphere-layer"></div>
 
@@ -208,7 +213,116 @@
     const STATE = {
         phase: 'START', units: [], mapData: [], activeUnit: null, pendingTile: null, validTargets: [], turnCount: 0,
         hlGroup: new THREE.Group(), faceGroup: new THREE.Group(), tgtGroup: new THREE.Group(), clock: new THREE.Clock(),
-        weather: null, wind: null, hitTiles: [] // NEW: Dedicated array just for strict tile raycasting
+        weather: null, wind: null, hitTiles: [], // NEW: Dedicated array just for strict tile raycasting
+        conflictStarted: false
+    };
+
+    // ═══════════════════════════════════════════════════════
+    //  BGM CONTROLLER
+    //  Ambient (weather) loops from battle start.
+    //  Crossfades into "conflict" track on first attack.
+    //  near-victory / tough-fight phases: TODO, files belum ada
+    //  di asset/bgm/ — tinggal tambah key + call di sini nanti.
+    // ═══════════════════════════════════════════════════════
+    const BGM = {
+        ambientEl: null, conflictEl: null, fadeTimer: null,
+
+        init: function() {
+            this.ambientEl = document.getElementById('bgmAmbient');
+            this.conflictEl = document.getElementById('bgmConflict');
+        },
+
+        fade: function(el, from, to, ms, onDone) {
+            clearInterval(this.fadeTimer);
+            const steps = 20, stepMs = ms / steps, delta = (to - from) / steps;
+            let i = 0; el.volume = from;
+            this.fadeTimer = setInterval(() => {
+                i++; el.volume = Math.max(0, Math.min(1, from + delta * i));
+                if (i >= steps) { clearInterval(this.fadeTimer); if (onDone) onDone(); }
+            }, stepMs);
+        },
+
+        // Called once battle starts — picks ambient track by current weather.
+        // Falls back silently (no play) if the file slot is still null in assets.config.js.
+        playAmbient: function() {
+            if (!this.ambientEl) return;
+            const src = BGM_TRACKS.weather; // rain/sun/moon all share this slot for now
+            if (!src) return;
+            this.ambientEl.src = src;
+            this.ambientEl.volume = 0;
+            this.ambientEl.play().catch(() => {}); // mobile autoplay guard — startBattle() click satisfies gesture requirement
+            this.fade(this.ambientEl, 0, 0.5, 1500);
+        },
+
+        // Called on first executeAttack() — crossfade ambient -> conflict.
+        triggerConflict: function() {
+            if (!this.conflictEl || !BGM_TRACKS.firstConflict) return;
+            this.conflictEl.src = BGM_TRACKS.firstConflict;
+            this.conflictEl.volume = 0;
+            this.conflictEl.play().catch(() => {});
+            this.fade(this.conflictEl, 0, 0.5, 2000);
+            this.fade(this.ambientEl, this.ambientEl.volume, 0, 2000, () => this.ambientEl.pause());
+        },
+
+        stopAll: function() {
+            clearInterval(this.fadeTimer);
+            if (this.ambientEl) this.ambientEl.pause();
+            if (this.conflictEl) this.conflictEl.pause();
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════
+    //  SFX CONTROLLER
+    //  Per-unit combat sounds (attack/hit/special) + weather
+    //  environment ambience (loop bed + random one-shots).
+    //  Semua no-op aman kalau file belum ada (resolveUnitSound
+    //  / AMBIENCE return null) — nggak akan error.
+    // ═══════════════════════════════════════════════════════
+    const SFX = {
+        envBedEl: null, oneShotTimer: null,
+
+        init: function() {
+            this.envBedEl = document.getElementById('envLoopBed');
+        },
+
+        // Fire a one-shot combat sound for a unit. category: attack/hit/special/critical/lose
+        playUnit: function(unit, category) {
+            const src = resolveUnitSound(unit.type, category);
+            if (!src) return; // TODO file belum ada — silent, bukan error
+            const a = new Audio(src);
+            a.volume = 0.7;
+            a.play().catch(() => {});
+        },
+
+        // Weather ambience — call once when battle starts, matches STATE.weather.id
+        startAmbience: function(weatherId) {
+            const cfg = AMBIENCE[weatherId];
+            if (!cfg) return;
+            if (cfg.loopBed && this.envBedEl) {
+                this.envBedEl.src = cfg.loopBed;
+                this.envBedEl.volume = 0.25; // sits under BGM
+                this.envBedEl.play().catch(() => {});
+            }
+            this.scheduleOneShot(cfg.oneShots);
+        },
+
+        scheduleOneShot: function(pool) {
+            clearTimeout(this.oneShotTimer);
+            if (!pool || pool.length === 0) return; // TODO belum ada file — skip scheduling
+            const delay = 8000 + Math.random() * 12000; // every 8–20s
+            this.oneShotTimer = setTimeout(() => {
+                const file = pool[Math.floor(Math.random() * pool.length)];
+                const a = new Audio(file);
+                a.volume = 0.4;
+                a.play().catch(() => {});
+                this.scheduleOneShot(pool); // reschedule next one-shot
+            }, delay);
+        },
+
+        stopAmbience: function() {
+            clearTimeout(this.oneShotTimer);
+            if (this.envBedEl) this.envBedEl.pause();
+        }
     };
 
     const UI = {
@@ -356,6 +470,7 @@
             u.hp = Math.max(0, u.hp - amt); 
             document.getElementById(`hp-txt-${u.id}`).innerText = u.hp; document.getElementById(`h-${u.id}`).style.width = `${(u.hp/u.mHp)*100}%`;
             UI.spawnDamageBox(u, amt, prefix); UI.updateMeter();
+            if (amt > 0) SFX.playUnit(u, u.hp <= 0 ? 'lose' : 'hit');
 
             let hpPct = u.hp / u.mHp;
             let scaleSides = Math.max(0.3, hpPct);
@@ -367,6 +482,7 @@
         },
         applySpecialEffects: function(atk, def, effect) {
             if (def.hp <= 0) return;
+            SFX.playUnit(atk, 'special');
             if (effect === 'turn') { setTimeout(() => { def.m.lookAt(atk.m.position.x, def.m.position.y, atk.m.position.z); UI.spawnDamageBox(def, "TURNED!", ""); }, 400); } 
             else if (effect === 'push' || effect === 'run') {
                 let pdx = Math.sign(def.x - atk.x); let pdz = Math.sign(def.z - atk.z); let tx = def.x + pdx; let tz = def.z + pdz;
@@ -380,6 +496,8 @@
             }
         },
         executeAttack: function(atk, def) {
+            if (!STATE.conflictStarted) { STATE.conflictStarted = true; BGM.triggerConflict(); }
+            SFX.playUnit(atk, 'attack');
             let baseDmg = 100 * (0.9 + Math.random() * 0.2); let finalDmg = baseDmg; let prefix = ""; let specialEffect = null;
             let aa = Math.atan2(atk.x - def.x, atk.z - def.z); let da = def.m.rotation.y; 
             let df = Math.abs(aa - da); while(df > Math.PI) df -= 2*Math.PI; df = Math.abs(df); 
@@ -601,6 +719,8 @@
                 document.getElementById('end-title').innerText = isWin ? "VICTORY ACHIEVED" : "TOTAL DEFEAT";
                 document.getElementById('end-title').style.color = isWin ? "#00ff44" : "#ff3333";
                 document.getElementById('end-screen').classList.remove('hidden');
+                BGM.stopAll();
+                SFX.stopAmbience();
             }
         }
     };
@@ -698,6 +818,8 @@
             document.getElementById('tile-panel').classList.remove('hidden');
             
             this.updateAtmosphere();
+            BGM.playAmbient();
+            SFX.startAmbience(STATE.weather.id);
 
             const pC = [{x:3,z:12}, {x:4,z:12}, {x:5,z:12}, {x:6,z:12}]; const eC = [{x:3,z:1}, {x:4,z:1}, {x:5,z:1}, {x:6,z:1}];
             UI.playerDraft.forEach((t, i) => this.spawnUnit(t, pC[i].x, pC[i].z, 'player', i));
@@ -896,7 +1018,7 @@
         }
     };
 
-    window.onload = () => { UI.initDraft(); ENGINE.init(); window._battleState = STATE; };
+    window.onload = () => { BGM.init(); SFX.init(); UI.initDraft(); ENGINE.init(); window._battleState = STATE; };
 </script>
 <script type="module">
     import {

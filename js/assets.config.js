@@ -31,37 +31,57 @@ const UNIT_MODELS = {
 // ─────────────────────────────────────────────────────
 const UNIT_AUDIO = {
   sword: {
-    tap:      { file: `${ASSET_ROOT}/audfx/Swordmen.. ready.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
-    move:     `${ASSET_ROOT}/audfx/step march foot.wav`,
-    attack:   `${ASSET_ROOT}/audfx/sword sure.wav`,
-    critical: null,   // TODO: belum ada file — fallback ke attack
-    defend:   null,   // TODO: belum ada file
-    lose:     null,   // TODO: belum ada file
+    tap:        { file: `${ASSET_ROOT}/audfx/Swordmen.. ready.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
+    move:       `${ASSET_ROOT}/audfx/step march foot.wav`,
+    attack:     `${ASSET_ROOT}/audfx/sword sure.wav`,
+    critical:   null,   // TODO: belum ada file — fallback ke attack
+    hit:        null,   // TODO: suara kena damage (defender)
+    special:    null,   // TODO: suara trigger efek khusus (turn/push/run)
+    defCritical:null,   // LATER: nunggu mechanic block/parry ada dulu
+    lose:       null,   // TODO
   },
   archer: {
-    tap:      { file: `${ASSET_ROOT}/audfx/tapped_common.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
-    move:     `${ASSET_ROOT}/audfx/step march foot.wav`,
-    attack:   `${ASSET_ROOT}/audfx/fly archers.wav`,
-    critical: null,
-    defend:   null,
-    lose:     null,
+    tap:        { file: `${ASSET_ROOT}/audfx/tapped_common.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
+    move:       `${ASSET_ROOT}/audfx/step march foot.wav`,
+    attack:     `${ASSET_ROOT}/audfx/fly archers.wav`,
+    critical:   null,
+    hit:        null,
+    special:    null,
+    defCritical:null,
+    lose:       null,
   },
   horse: {
-    tap:      { file: `${ASSET_ROOT}/audfx/horsie tapp.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
-    move:     `${ASSET_ROOT}/audfx/horse manuver.wav`,
-    attack:   null,   // TODO
-    critical: null,
-    defend:   null,
-    lose:     null,
+    tap:        { file: `${ASSET_ROOT}/audfx/horsie tapp.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
+    move:       `${ASSET_ROOT}/audfx/horse manuver.wav`,
+    attack:     null,   // TODO
+    critical:   null,
+    hit:        null,
+    special:    null,   // TODO: neigh/charge saat trigger 'run'
+    defCritical:null,
+    lose:       null,
   },
   spear: {
-    tap:      { file: `${ASSET_ROOT}/audfx/tapped_common.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
-    move:     `${ASSET_ROOT}/audfx/step march foot.wav`,
-    attack:   null,   // TODO
-    critical: null,
-    defend:   null,
-    lose:     null,
+    tap:        { file: `${ASSET_ROOT}/audfx/tapped_common.wav`, segments: { high: [0, 0.6], mid: [0.6, 1.3], low: [1.3, 2.0] } },
+    move:       `${ASSET_ROOT}/audfx/step march foot.wav`,
+    attack:     null,   // TODO
+    critical:   null,
+    hit:        null,
+    special:    null,   // TODO: brace sound saat trigger 'push'
+    defCritical:null,
+    lose:       null,
   },
+};
+
+// ─────────────────────────────────────────────────────
+//  AMBIENCE  (asset/audfx/ambience/ — belum dibuat)
+//  Loop bed pelan di bawah BGM + one-shot acak per weather.
+//  Semua null sekarang — tinggal isi filename pas ada asset,
+//  ambient system di battle.html udah siap pakai ini langsung.
+// ─────────────────────────────────────────────────────
+const AMBIENCE = {
+  Moon: { loopBed: null, oneShots: [] },  // TODO: owl hoot, distant wolf, twig snap
+  Sun:  { loopBed: null, oneShots: [] },  // TODO: bird chirps, wind gust
+  Rain: { loopBed: null, oneShots: [] },  // optional: closer thunder crack
 };
 
 // ─────────────────────────────────────────────────────
@@ -104,14 +124,17 @@ function playTapSegment(audioCtx, buffer, tier /* 'high' | 'mid' | 'low' */) {
   source.start(0, start, end - start);
 }
 
-// Resolve audio path with fallback, so missing files don't crash the game
+// Resolve audio path with fallback, so missing files don't crash the game.
+// Only 'critical' borrows the attack sound as a placeholder — hit/special/
+// defCritical/lose stay silent (return null) until real files are added,
+// so we don't play a confusing "wrong" sound in their place.
 function resolveUnitSound(unitType, category) {
   const unit = UNIT_AUDIO[unitType];
   if (!unit) return null;
   const entry = unit[category];
   if (entry && typeof entry === 'string') return entry;
   if (entry && entry.file) return entry.file;
-  // fallback chain: attack -> tap common, critical/defend/lose -> attack
-  if (category !== 'tap' && unit.attack) return unit.attack;
-  return unit.tap ? unit.tap.file : `${ASSET_ROOT}/audfx/tapped_common.wav`;
+  if (category === 'critical') return unit.attack || null;
+  if (category === 'tap') return `${ASSET_ROOT}/audfx/tapped_common.wav`;
+  return null;
 }
