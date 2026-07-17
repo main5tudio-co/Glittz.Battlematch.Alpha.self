@@ -142,6 +142,10 @@
         </div>
         <div id="global-condition">🛡️ Vanguard Formation</div>
     </div>
+
+    <div id="audio-debug-toast" style="display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%);
+         background:rgba(200,0,0,0.92); color:#fff; font-size:11px; font-weight:bold; padding:8px 14px;
+         border-radius:8px; z-index:5000; max-width:90vw; text-align:center; box-shadow:0 4px 10px rgba(0,0,0,0.4);"></div>
     
     <div id="weather-compass-group" class="hidden">
         <div id="weather-icon-center">☀️</div>
@@ -224,12 +228,30 @@
     //  near-victory / tough-fight phases: TODO, files belum ada
     //  di asset/bgm/ — tinggal tambah key + call di sini nanti.
     // ═══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
+    //  DEBUG TOAST — visible on-screen, no desktop console needed.
+    //  Shows the actual file path that failed, so you can see
+    //  it's a 404 / wrong path issue right on your phone.
+    //  Remove this whole block once audio is confirmed working.
+    // ═══════════════════════════════════════════════════════
+    let _audioDebugTimer = null;
+    function showAudioDebug(msg) {
+        const el = document.getElementById('audio-debug-toast');
+        if (!el) return;
+        el.innerText = msg;
+        el.style.display = 'block';
+        clearTimeout(_audioDebugTimer);
+        _audioDebugTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
     const BGM = {
         ambientEl: null, conflictEl: null, fadeTimer: null,
 
         init: function() {
             this.ambientEl = document.getElementById('bgmAmbient');
             this.conflictEl = document.getElementById('bgmConflict');
+            this.ambientEl.addEventListener('error', () => showAudioDebug('BGM AMBIENT FAILED: ' + this.ambientEl.src));
+            this.conflictEl.addEventListener('error', () => showAudioDebug('BGM CONFLICT FAILED: ' + this.conflictEl.src));
         },
 
         fade: function(el, from, to, ms, onDone) {
@@ -247,10 +269,11 @@
         playAmbient: function() {
             if (!this.ambientEl) return;
             const src = BGM_TRACKS.weather; // rain/sun/moon all share this slot for now
-            if (!src) return;
+            if (!src) { showAudioDebug('BGM_TRACKS.weather is null — no file assigned yet'); return; }
+            showAudioDebug('Loading BGM: ' + src);
             this.ambientEl.src = src;
             this.ambientEl.volume = 0;
-            this.ambientEl.play().catch(() => {}); // mobile autoplay guard — startBattle() click satisfies gesture requirement
+            this.ambientEl.play().catch(err => showAudioDebug('BGM AMBIENT play() blocked: ' + err.message));
             this.fade(this.ambientEl, 0, 0.5, 1500);
         },
 
